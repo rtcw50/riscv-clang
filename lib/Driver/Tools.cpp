@@ -1565,6 +1565,36 @@ void Clang::AddRISCVTargetArgs(const ArgList &Args,
 
   // Set the CPU based on -march= and -mcpu=.
   getRISCVTargetCPU(Args, CmdArgs, Triple);
+
+  // fp-contract handling -- RISCV has fmadd instruction and should emit
+  // it as the default case. For the default case, LLVM emits an fma intrinsic
+  // which is lowered to a ISD::FMA and subsequently codegen'd to fmadd.s/.d.
+  // #pragma STDC FP_CONTRACT OFF can disable the fma intrinsic or an
+  // explicit -ffp-contract=off will disable the fma intrinsic.
+  // The whole point is fmadd and fmul/fadd usage may result in slightly
+  // different fp results, but we choose to allow fmadd by default and
+  // turn it off explicitly by one of the methods described above if desired.
+
+  // Only enable fp-contract if floating-pt supported on target.
+  if (std::find(CmdArgs.begin(), CmdArgs.end(), "+f") == CmdArgs.end())
+    return;
+  if (std::find(CmdArgs.begin(), CmdArgs.end(), "+d") == CmdArgs.end())
+    return;
+
+  bool disable_fp_contract=false;
+
+  // If User explicitly turned fp-contract off, respect this request
+  if (Arg *A = Args.getLastArg(options::OPT_ffp_contract)) {
+    StringRef Val = A->getValue();
+    if (Val == "off") {
+      disable_fp_contract = true;
+    }
+  }
+
+  // Otherwise, enable fp-contract to enable fma intrinsic generation.
+  if (!disable_fp_contract) {
+    CmdArgs.push_back("-ffp-contract=on");
+  }
 }
 //End RISCV
 
